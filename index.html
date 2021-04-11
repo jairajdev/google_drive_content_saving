@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Google Drive Content Saving</title>
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <p>Google Drive Content Saving</p>
+
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize_button" style="display: none">Authorize</button>
+    <button id="another_file_button" style="display: none">
+      Use another file
+    </button>
+    <br />
+    <form id="myform" style="display: none">
+      <div>
+        <textarea
+          rows="4"
+          cols="25"
+          form="myform"
+          name="content"
+          required
+          id="text"
+        ></textarea>
+      </div>
+      <button type="submit" value="submit" id="myform-submit">
+        Upload File
+      </button>
+    </form>
+    <form id="usefileform" style="display: none">
+      <div>
+        <label for="text"
+          >Enter the exact filename with extension you want to create or update
+          on Google Drive</label
+        >
+      </div>
+      <div>
+        <input name="filename" required id="text" />
+      </div>
+      <button type="submit" value="submit" id="usefileform-submit">
+        Get File
+      </button>
+    </form>
+    <h3 id="success" style="display: none" style="color: blue">
+      File Upload Success!
+    </h3>
+    <br />
+    <button id="signout_button" style="display: none">Sign Out</button>
+    <a download="info.txt" id="downloadlink" style="display: none">Download</a>
+    <pre id="content" style="white-space: pre-wrap"></pre>
+
+    <script type="text/javascript">
+      // Client ID and API key from the Developer Console
+      var CLIENT_ID = "";
+      var API_KEY = "";
+
+      // Array of API discovery doc URLs for APIs used by the quickstart
+      var DISCOVERY_DOCS = [
+        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+      ];
+
+      // Authorization scopes required by the API; multiple scopes can be
+      // included, separated by spaces.
+      // var SCOPES = "https://www.googleapis.com/auth/drive.metadata.readonly";
+      var SCOPES =
+        "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile ";
+
+      var authorizeButton = document.getElementById("authorize_button");
+      var anotherFileButton = document.getElementById("another_file_button");
+      var signoutButton = document.getElementById("signout_button");
+      var myform = document.getElementById("myform");
+      var submitButton = document.getElementById("myform-submit");
+      var success = document.getElementById("success");
+      var usefileform = document.getElementById("usefileform");
+      var getFileButton = document.getElementById("usefileform-submit");
+
+      var filename = "";
+      var fileid = "";
+      var filecontent = "";
+
+      /**
+       *  On load, called to load the auth2 library and API client library.
+       */
+      function handleClientLoad() {
+        gapi.load("client:auth2", initClient);
+      }
+
+      /**
+       *  Initializes the API client library and sets up sign-in state
+       *  listeners.
+       */
+      function initClient() {
+        gapi.client
+          .init({
+            apiKey: API_KEY,
+            clientId: CLIENT_ID,
+            discoveryDocs: DISCOVERY_DOCS,
+            scope: SCOPES,
+          })
+          .then(
+            function () {
+              // Listen for sign-in state changes.
+              gapi.auth2
+                .getAuthInstance()
+                .isSignedIn.listen(updateSigninStatus);
+
+              // Handle the initial sign-in state.
+              updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+              // console.log(gapi.auth2.getAuthInstance().isSignedIn.get());
+              authorizeButton.onclick = handleAuthClick;
+              anotherFileButton.onclick = handleAnotherFileClick;
+              signoutButton.onclick = handleSignoutClick;
+              submitButton.onclick = handleUploadClick;
+              getFileButton.onclick = handleGetFileClick;
+            },
+            function (error) {
+              appendPre(JSON.stringify(error, null, 2));
+            }
+          );
+      }
+
+      /**
+       *  Called when the signed in status changes, to update the UI
+       *  appropriately. After a sign-in, the API is called.
+       */
+      function updateSigninStatus(isSignedIn) {
+        if (isSignedIn) {
+          myform.style.display = "block";
+          if (!filename) {
+            myform.style.display = "none";
+            usefileform.style.display = "block";
+          }
+          authorizeButton.style.display = "none";
+          anotherFileButton.style.display = "block";
+          signoutButton.style.display = "block";
+          listFiles();
+        } else {
+          authorizeButton.style.display = "block";
+          anotherFileButton.style.display = "none";
+          signoutButton.style.display = "none";
+          myform.style.display = "none";
+          usefileform.style.display = "none";
+          success.style.display = "none";
+        }
+      }
+
+      /**
+       *  Sign in the user upon button click.
+       */
+      function handleAuthClick(event) {
+        const a = gapi.auth2.getAuthInstance().signIn();
+      }
+
+      /**
+       *  Sign out the user upon button click.
+       */
+      function handleSignoutClick(event) {
+        gapi.auth2.getAuthInstance().signOut();
+        var pre = document.getElementById("content");
+        pre.textContent = "";
+        filename = "";
+        fileid = "";
+        filecontent = "";
+      }
+
+      function handleAuthClick(event) {
+        const a = gapi.auth2.getAuthInstance().signIn();
+      }
+
+      function handleAnotherFileClick(event) {
+        event.preventDefault();
+        usefileform.filename.value = "";
+        myform.content.value = "";
+        myform.style.display = "none";
+        usefileform.style.display = "block";
+        success.style.display = "none";
+      }
+
+      function handleGetFileClick(event) {
+        event.preventDefault();
+        filename = usefileform.filename.value;
+        if (!filename) {
+          success.innerHTML = "Please enter the exact filename!";
+        }
+        gapi.client.drive.files
+          .list({
+            q: "name = '" + filename + "'",
+            pageSize: 100,
+            fields: "nextPageToken, files(id, name)",
+          })
+          .then(
+            async function (response) {
+              console.log(response);
+              // console.log("files ", response.result.files);
+              var files = response.result.files;
+              if (files && files.length > 0) {
+                for (var i = 0; i < files.length; i++) {
+                  var file = files[i];
+                  fileid = file.id;
+                  success.innerHTML =
+                    "Found the file " + filename + " !Using it.";
+                  success.style.display = "block";
+                }
+                // await readFile(fileid);
+                await gapi.client.drive.files
+                  .get({
+                    fileId: fileid,
+                    alt: "media",
+                  })
+                  .then(function (response) {
+                    // console.log(response); //response.body contains the string value of the file
+                    filecontent = response.body;
+                  });
+                // console.log(filecontent);
+                myform.content.value = filecontent;
+                myform.style.display = "block";
+                usefileform.style.display = "none";
+              } else {
+                fileid = "";
+                filecontent = "";
+                success.innerHTML =
+                  "Using the file " + filename + " !Enter the content.";
+                success.style.display = "block";
+                myform.style.display = "block";
+                usefileform.style.display = "none";
+              }
+            },
+            function (error) {
+              console.log(error);
+            }
+          );
+      }
+
+      async function readFile(fileId) {
+        gapi.client.drive.files
+          .get({
+            fileId: fileId,
+            alt: "media",
+          })
+          .then(function (response) {
+            console.log(response); //response.body contains the string value of the file
+            filecontent = response.body;
+          });
+      }
+
+      /**
+       *  upload to google drive the user upon button click.
+       */
+      function handleUploadClick(event) {
+        event.preventDefault();
+        var fileContent = myform.content.value;
+
+        //First Technique (Create file with name 'Untile' and add the content of the file)
+
+        // var xhttp = new XMLHttpRequest();
+        // xhttp.onreadystatechange = function () {
+        //   if (this.readyState == 4 && this.status == 200) {
+        //     console.log(this.responseText);
+        //   }
+        // };
+        // xhttp.open(
+        //   "POST",
+        //   "https://www.googleapis.com/upload/drive/v3/files?uploadType=media",
+        //   { name: "abc.txt" },
+        //   true
+        // );
+        // xhttp.setRequestHeader(
+        //   "Authorization",
+        //   "Bearer " +
+        //     gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse()
+        //       .access_token
+        // );
+        // // xhttp.setRequestHeader("Content-type", "application/json");
+        // var params = { name: "abc.txt" };
+        // xhttp.send(JSON.stringify(params));
+        // xhttp.setRequestHeader("Content-type", "application/json");
+        // xhttp.send({ fname: "Henry", name: "Ford" });
+
+        // Second Technique (only create file, but not add content of the file)
+
+        // var fileMetadata = {
+        //   name: "textinput.txt",
+        // };
+        // var media = {
+        //   mimeType: "text/plain",
+        //   body: new Blob(["Hello world"], { type: "text/plain" }),
+        // };
+        // gapi.client.drive.files
+        //   .create({
+        //     media: media,
+        //     name: "boom.txt",
+        //     fields: "id",
+        //   })
+        //   .then(function (response) {
+        //     console.log(response);
+        //   });
+
+        // Third Technique (create file and add content, seems working)
+
+        var fileContent = myform.content.value;
+        // console.log(fileContent);
+        var accessToken = gapi.auth2
+          .getAuthInstance()
+          .currentUser.get()
+          .getAuthResponse().access_token;
+        if (fileid) {
+          const url =
+            "https://www.googleapis.com/upload/drive/v3/files/" +
+            fileid +
+            "?uploadType=multipart";
+          var setHeaders = new Headers();
+          setHeaders.append("Authorization", "Bearer " + accessToken);
+
+          var setOptions = {
+            method: "PATCH",
+            headers: setHeaders,
+            body: fileContent,
+          };
+          fetch(url, setOptions)
+            .then((response) => {
+              if (response.ok) {
+                success.innerHTML = "Successfully updated file!";
+              } else {
+                success.innerHTML = "Fail to update the file!";
+              }
+              success.style.display = "block";
+              listFiles();
+            })
+            .catch((error) => {
+              console.log("There is an error " + error.message);
+            });
+        } else {
+          var file = new Blob([fileContent], { type: "text/plain" });
+          var metadata = {
+            name: filename,
+            mimeType: "text/plain",
+          };
+          var form = new FormData();
+          form.append(
+            "metadata",
+            new Blob([JSON.stringify(metadata)], { type: "application/json" })
+          );
+          form.append("file", file);
+
+          var xhr = new XMLHttpRequest();
+          xhr.open(
+            "post",
+            `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`
+          );
+          xhr.setRequestHeader("Authorization", "Bearer " + accessToken);
+          xhr.responseType = "json";
+          xhr.onload = () => {
+            // console.log(xhr.response);
+            // console.log(xhr.response.id); // Retrieve uploaded file ID.
+            success.innerHTML = "Successfully uploaded file!";
+            fileid = xhr.response.id;
+            success.style.display = "block";
+            listFiles();
+          };
+          xhr.send(form);
+        }
+      }
+
+      /**
+       * Append a pre element to the body containing the given message
+       * as its text node. Used to display the results of the API call.
+       *
+       * @param {string} message Text to be placed in pre element.
+       */
+      function appendPre(message) {
+        var pre = document.getElementById("content");
+        var textContent = document.createTextNode(message + "\n");
+        pre.appendChild(textContent);
+      }
+
+      /**
+       * Print files.
+       */
+      function listFiles() {
+        gapi.client.drive.files
+          .list({
+            pageSize: 100,
+            fields: "nextPageToken, files(id, name)",
+          })
+          .then(function (response) {
+            console.log("files ", response.result.files);
+            var pre = document.getElementById("content");
+            pre.textContent = "";
+            appendPre("Files on Google Drive:");
+            var files = response.result.files;
+            if (files && files.length > 0) {
+              for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                appendPre(file.name);
+              }
+            } else {
+              appendPre("No files found.");
+            }
+          });
+      }
+    </script>
+
+    <script
+      async
+      defer
+      src="https://apis.google.com/js/api.js"
+      onload="this.onload=function(){};handleClientLoad()"
+      onreadystatechange="if (this.readyState === 'complete') this.onload()"
+    ></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+  </body>
+</html>
